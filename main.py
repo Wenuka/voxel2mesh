@@ -72,13 +72,20 @@ def init(cfg):
     return trial_save_path, trial_id
 
 def main():
- 
-    from models.voxel2mesh import Voxel2Mesh as network
-    # from models.unet import UNet as network
     exp_id = 2
+    cfg = load_config(exp_id)
+
+    if cfg.name == 'voxel2mesh':
+        from models.voxel2mesh import Voxel2Mesh as network
+        print ("using voxel2mesh model")
+    elif cfg.name == 'unet':
+        from models.unet import UNet as network
+        print ("using unet model")
+    else:
+        print ("Error at selecting the model. Please correct at config file.")
+        exit()
 
     # Initialize
-    cfg = load_config(exp_id)
     trial_path, trial_id = init(cfg) 
  
     print('Experiment ID: {}, Trial ID: {}'.format(cfg.experiment_idx, trial_id))
@@ -125,7 +132,7 @@ def main():
     trainer.train(start_iteration=epoch) 
 
     # To evaluate a pretrained model, uncomment line below and comment the line above
-    # evaluator.evaluate(epoch)
+    evaluator.evaluate(epoch)
 
 if __name__ == "__main__": 
     main()

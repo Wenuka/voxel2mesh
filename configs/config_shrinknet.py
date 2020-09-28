@@ -56,6 +56,7 @@ def load_config(exp_id):
     cfg.save_dir_prefix = 'Experiment_' # prefix for experiment folder
  
     cfg.name = 'voxel2mesh'
+    # cfg.name = 'unet'
    
 
     ''' Dataset ''' 

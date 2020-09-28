@@ -50,7 +50,7 @@ class Trainer(object):
         iteration = start_iteration 
 
         print_every = 1
-        for epoch in range(10000000):  # loop over the dataset multiple times
+        for epoch in range(1):  # loop over the dataset multiple times
  
  
             for itr, data in enumerate(self.trainloader):
