@@ -1,6 +1,6 @@
  
 import os
-GPU_index = "0"
+GPU_index = "3"
 os.environ["CUDA_VISIBLE_DEVICES"] = GPU_index
 
   
