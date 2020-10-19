@@ -49,11 +49,10 @@ class Trainer(object):
         self.net = self.net.train()
         iteration = start_iteration 
 
-        print_every = 1
-        for epoch in range(1):  # loop over the dataset multiple times
+        print_every = 10
+        while (True):
  
- 
-            for itr, data in enumerate(self.trainloader):
+            for itr, data in enumerate(self.trainloader): # for nueron dataset, 14 sets
   
                 # training step 
                 loss = self.training_step(data, start_iteration)
@@ -73,8 +72,8 @@ class Trainer(object):
                 if iteration % self.eval_every == self.eval_every-1:  # print every K epochs
                     self.evaluator.evaluate(iteration)
 
-                if iteration > self.numb_of_itrs:
-                    break
+            if iteration > self.numb_of_itrs:
+                break
    
 
         logger.info("... end training!")

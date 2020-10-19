@@ -1,6 +1,6 @@
  
 import os
-GPU_index = "3"
+GPU_index = "1"
 os.environ["CUDA_VISIBLE_DEVICES"] = GPU_index
 
   
@@ -72,7 +72,7 @@ def init(cfg):
     return trial_save_path, trial_id
 
 def main():
-    exp_id = 2
+    exp_id = 3
     cfg = load_config(exp_id)
 
     if cfg.name == 'voxel2mesh':
@@ -101,14 +101,14 @@ def main():
   
     print("Load data") 
     # data_obj = Chaos()
-    data_obj = CortexEpfl()
+    data_obj = CortexEpfl()  ## inherited from DatasetAndSupport class
 
     # During the first run use load_data function. It will do the necessary preprocessing and save the files to disk.
     # data = data_obj.pre_process_dataset(cfg, trial_id)
     # data = data_obj.quick_load_data(cfg, trial_id)
     data = data_obj.quick_load_data(cfg, trial_id)
-    
-    loader = DataLoader(data[DataModes.TRAINING], batch_size=classifier.config.batch_size, shuffle=True)
+
+    loader = DataLoader(data[DataModes.TRAINING_EXTENDED], batch_size=classifier.config.batch_size, shuffle=True)
   
     print("Trainset length: {}".format(loader.__len__()))
 
@@ -120,7 +120,7 @@ def main():
 
     if cfg.trial_id is not None:
         print("Loading pretrained network")
-        save_path = trial_path + '/best_performance/model.pth'
+        save_path = trial_path + '/best_performance3/model.pth'
         checkpoint = torch.load(save_path)
         classifier.load_state_dict(checkpoint['model_state_dict'])
         optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -129,9 +129,8 @@ def main():
         epoch = 0
 
 
-    trainer.train(start_iteration=epoch) 
+    trainer.train(start_iteration=epoch)
 
-    # To evaluate a pretrained model, uncomment line below and comment the line above
     evaluator.evaluate(epoch)
 
 if __name__ == "__main__": 

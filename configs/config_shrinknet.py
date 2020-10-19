@@ -63,7 +63,7 @@ def load_config(exp_id):
     cfg.training_set_size = 10  
 
     # input should be cubic. Otherwise, input should be padded accordingly.
-    cfg.patch_shape = (64, 64, 64) 
+    cfg.patch_shape = (96, 96, 96) 
     
 
     cfg.ndims = 3
@@ -87,10 +87,16 @@ def load_config(exp_id):
     cfg.learning_rate = 1e-4
 
     ''' Training '''
-    cfg.numb_of_itrs = 300000
-    cfg.eval_every = 10 # saves results to disk
+    cfg.numb_of_itrs = 120000
+    cfg.eval_every = 2000 # saves results to disk
 
     # ''' Rreporting '''
     # cfg.wab = True # use weight and biases for reporting
-    
+
+    ''' ** To Verify ** '''
+    cfg.unpool_indices = [0, 1, 1, 1, 0] #Ex3-31,33 ## use this always
+    # cfg.unpool_indices = [0, 1, 0, 1, 1] #EX3- 32
+    # cfg.unpool_indices = False ## for unet just to check
+
+    cfg.sparse_model ='else' # 'point_model' , 'base_plane_model' or anything else lead to fully_annotated based training
     return cfg
