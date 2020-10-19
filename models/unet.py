@@ -71,9 +71,14 @@ class UNet(nn.Module):
     def loss(self, data, epoch):
 
         pred = self.forward(data)
-  
-        CE_Loss = nn.CrossEntropyLoss()
-        loss = CE_Loss(pred, data['y_voxels'].cuda())
+
+        weight = data['base_plane'].float().cuda()
+
+        CE_Loss = nn.CrossEntropyLoss(reduction='none')
+        # CE_Loss2 = nn.CrossEntropyLoss()
+        # loss2 = CE_Loss2(pred, data['y_voxels'].cuda())
+        loss = CE_Loss(pred, data['y_voxels'].cuda()) * weight
+        loss = loss.mean()
 
         log = {"loss": loss.detach()}
 

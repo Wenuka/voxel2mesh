@@ -27,10 +27,12 @@ class Sample:
 
 class CortexVoxelDataset(Dataset):
 
-    def __init__(self, data, cfg, mode):
+    def __init__(self, data, cfg, mode, base_sparse_plane=None, point_count=None):
         self.data = data
         self.cfg = cfg
         self.mode = mode
+        self.base_sparse_plane = base_sparse_plane
+        self.point_count = point_count
 
 
     def __len__(self):
@@ -45,14 +47,31 @@ class CortexVoxelDataset(Dataset):
         x = torch.from_numpy(item.x).cuda()[None]
         y = torch.from_numpy(item.y).cuda().long()
 
+        # embed()
+        y[y == 2] = 0
+        y[y == 3] = 0
+        # y[y==3] = 1
+
+        if self.base_sparse_plane is not None:
+            base_plane = torch.from_numpy(self.base_sparse_plane).cuda().float()
+        elif self.point_count is not None:
+            y_mid = sample_outer_surface_in_voxel(y) ## around 1-2% points 1 among all
+            # breakpoint()
+            # print(self.point_count)
+            idxs = torch.nonzero(y_mid) ## [number of onits x 3] ## all indexes
+            y_mid = torch.zeros_like(y)
+            perm = torch.randperm(len(idxs)) # random permutation
+            idxs = idxs[perm[:self.point_count]]
+            y_mid[idxs[:,0], idxs[:,1], idxs[:,2]] = 1
+            base_plane = y_mid.clone()
+            y = y_mid.clone()
+        else:
+            base_plane = torch.ones_like(y).float()
+            # breakpoint()
         C, D, H, W = x.shape
         center = (D//2, H//2, W//2) 
-  
 
-        # embed()
-        y[y==2] = 0
-        y[y==3] = 0 
-        # y[y==3] = 1 
+        # breakpoint()
         y = y.long()
 
         # embed()
@@ -91,10 +110,11 @@ class CortexVoxelDataset(Dataset):
 
             theta = theta_rotate @ theta_shift @ theta_scale
  
-            x, y = stns.transform(theta, x, y)    
+            x, y, base_plane = stns.transform(theta, x, y, w=base_plane)
         else:
             pose = torch.zeros(6).cuda()
-            w = torch.zeros_like(y)
+            # w = torch.zeros_like(y)
+            # base_plane = torch.ones_like(y)
             theta = torch.eye(4).cuda()
 
         # theta = theta.inverse()
@@ -119,6 +139,7 @@ class CortexVoxelDataset(Dataset):
 
         x = crop(x, (C,) + self.cfg.patch_shape, (0,) + center)
         y = crop(y, self.cfg.patch_shape, center) 
+        base_plane = crop(base_plane, self.cfg.patch_shape, center)
 
         surface_points_normalized_all = []
         vertices_mc_all = []
@@ -178,7 +199,8 @@ class CortexVoxelDataset(Dataset):
                        't':t,
                        'unpool':self.cfg.unpool_indices,
                        'w': y_outer,
-                       'theta': theta.inverse()[:3]
+                       'theta': theta.inverse()[:3],
+                       'base_plane' : base_plane
                     }
         else:
             return {   'x': x,
@@ -192,25 +214,54 @@ class CortexVoxelDataset(Dataset):
                        'p':p,
                        't':t,
                        'unpool':[0, 1, 0, 1, 1],
-                       'theta': theta.inverse()[:3]}
+                       'theta': theta.inverse()[:3],
+                       'base_plane': base_plane
+                    }
 
 
 class CortexEpfl(DatasetAndSupport):
- 
     def quick_load_data(self, cfg, trial_id):
         # assert cfg.patch_shape == (96, 96, 96), 'Not supported'
-
         data_root = '/cvlabsrc1'+volume_suffix+'/cvlab/datasets_udaranga/datasets/3d/graham/'
         class_id = 14
         data_version = 'labels_v' + str(class_id) + '/'
 
         with open(data_root + data_version + 'labels/pre_computed_voxel.pickle', 'rb') as handle:
             data = pickle.load(handle)
- 
+
+        if cfg.sparse_model == 'point_model':
+            point_count = 100  ## ex: out of 21k
+            print(f"using {point_count} points for annotation")
+
+            data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg,\
+                                                                   DataModes.TRAINING_EXTENDED, point_count=point_count)
+        elif cfg.sparse_model == 'base_plane_model':
+            print("Using base plane model for sparse annotation")
+            planes_per_axis = 2
+            half_plane = len(data[DataModes.TRAINING].data[0].y)//planes_per_axis # 135//2 = 67
+            keep_planes = np.zeros_like(data[DataModes.TRAINING].data[0].y)
+            keep_planes[:,:,half_plane] = 1
+            keep_planes[half_plane,:,:] = 1
+            keep_planes[:,half_plane, :] = 1
+            # half_plane3 = half_plane*2
+            # keep_planes[:,:,half_plane3] = 1
+            # keep_planes[half_plane3,:,:] = 1
+            # keep_planes[:,half_plane3, :] = 1
+
+            for sample in data[DataModes.TRAINING].data:
+                sample.y = sample.y*keep_planes ## for each new training data, only keep few given plane
+
+            data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, \
+                                                                   DataModes.TRAINING_EXTENDED, base_sparse_plane=keep_planes)
+
+        else:
+            print("with full annotation")
+            data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, DataModes.TRAINING_EXTENDED)
+
         # data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, data[DataModes.TRAINING].cfg, DataModes.TRAINING_EXTENDED)
         # data[DataModes.TRAINING] = CortexVoxelDataset(data[DataModes.TRAINING].data, data[DataModes.TRAINING].cfg, DataModes.TRAINING)
-        data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, DataModes.TRAINING_EXTENDED)
-        data[DataModes.TRAINING] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, DataModes.TRAINING)
+        # data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, DataModes.TRAINING_EXTENDED)
+        # data[DataModes.TRAINING] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, DataModes.TRAINING)
         data[DataModes.TESTING] = CortexVoxelDataset(data[DataModes.TESTING].data, cfg, DataModes.TESTING)
     
         return data
