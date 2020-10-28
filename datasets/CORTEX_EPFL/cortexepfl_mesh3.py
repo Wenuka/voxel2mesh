@@ -201,9 +201,9 @@ class CortexVoxelDataset(Dataset):
         # print('in')
         # breakpoint()
         if self.mode == DataModes.TRAINING_EXTENDED:
-            return {   'x': x, 
-                       'faces_atlas': atlas_faces, 
-                       'y_voxels': y, 
+            return {   'x': x,
+                       'faces_atlas': atlas_faces,
+                       'y_voxels': y,
                        'surface_points': surface_points_normalized_all,
                        'p':p,
                        't':t,
@@ -214,8 +214,8 @@ class CortexVoxelDataset(Dataset):
                     }
         else:
             return {   'x': x,
-                       'x_super_res': x_super_res, 
-                       'faces_atlas': atlas_faces, 
+                       'x_super_res': x_super_res,
+                       'faces_atlas': atlas_faces,
                        'y_voxels': y,
                        'y_voxels_super_res': y_super_res,
                        'vertices_mc': vertices_mc_all,
@@ -239,6 +239,11 @@ class CortexEpfl(DatasetAndSupport):
         with open(data_root + data_version + 'labels/pre_computed_voxel.pickle', 'rb') as handle:
             data = pickle.load(handle)
 
+        for sample in data[DataModes.TRAINING].data:
+            sample.y[sample.y >1] = 0
+        for sample in data[DataModes.TESTING].data:
+            sample.y[sample.y >1] = 0
+        # breakpoint()
         if cfg.sparse_model == 'point_model':
             point_count = 100  ## ex: out of 21k
             zero_points = False
