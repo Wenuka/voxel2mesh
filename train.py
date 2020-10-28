@@ -2,7 +2,8 @@ import logging
 import torch
 # from torch.utils.tensorboard import SummaryWriter
 from utils.utils_common import DataModes
- 
+# import torch.optim as optim
+
 import numpy as np
 import time 
 import wandb
@@ -23,6 +24,7 @@ class Trainer(object):
         loss, log = self.net.loss(data, epoch) 
         loss.backward()
         self.optimizer.step()  
+        # self.scheduler.step()
         # embed()
 
         return log
@@ -38,6 +40,7 @@ class Trainer(object):
         self.save_path = save_path 
 
         self.evaluator = evaluator 
+        # self.scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10000, gamma=0.8)
 
 
 
@@ -55,17 +58,18 @@ class Trainer(object):
             for itr, data in enumerate(self.trainloader): # for nueron dataset, 14 sets
   
                 # training step 
-                loss = self.training_step(data, start_iteration)
-   
+                # loss = self.training_step(data, start_iteration)
+                loss = self.training_step(data, iteration)
 
                 if iteration % print_every == 0:
                     log_vals = {}
                     for key, value in loss.items():
-                        log_vals[key] = value / print_every 
+                        log_vals[key] = value / print_every
+                    log_vals['lr'] = self.optimizer.param_groups[0]['lr']
                     log_vals['iteration'] = iteration 
                     wandb.log(log_vals)
- 
-  
+
+
 
                 iteration = iteration + 1 
 
