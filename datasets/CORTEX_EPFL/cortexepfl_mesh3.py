@@ -44,152 +44,162 @@ class CortexVoxelDataset(Dataset):
 
     def __getitem__(self, idx):
         item = self.data[idx]
-        x = torch.from_numpy(item.x).cuda()[None]
-        y = torch.from_numpy(item.y).cuda().long()
+        while True:
+            x = torch.from_numpy(item.x).cuda()[None]
+            y = torch.from_numpy(item.y).cuda().long()
 
-        # embed()
-        y[y == 2] = 0
-        y[y == 3] = 0
-        # y[y==3] = 1
+            # embed()
+            ## also done in quick load
+            y[y == 2] = 0
+            y[y == 3] = 0
+            # y[y==3] = 1
 
-        if self.base_sparse_plane is not None:
-            base_plane = torch.from_numpy(self.base_sparse_plane).cuda().float()
-        elif self.point_count is not None:
-            y_mid = sample_outer_surface_in_voxel(y) ## around 1-2% points 1 among all
-            # breakpoint()
-            # print(self.point_count)
-            idxs = torch.nonzero(y_mid) ## [number of onits x 3] ## all indexes
-            y_mid = torch.zeros_like(y)
-            perm = torch.randperm(len(idxs)) # random permutation
-            idxs = idxs[perm[:self.point_count]]
-            y_mid[idxs[:,0], idxs[:,1], idxs[:,2]] = 1
-            base_plane = y_mid.clone()
-            y = y_mid.clone()
-        else:
-            base_plane = torch.ones_like(y).float()
-            # breakpoint()
-        C, D, H, W = x.shape
-        center = (D//2, H//2, W//2) 
-
-        # breakpoint()
-        y = y.long()
-
-        # embed()
-
-        # from utils.rasterize.rasterize import Rasterize
-        # from skimage import io
-        # shape = torch.tensor(y.shape)[None].float()
-        # gap = 1
-        # y_ = clean_border_pixels((y==1).long(), gap=gap)
-        # vertices_mc, faces_mc = voxel2mesh(y_, gap, shape)
-
-        # D, H, W = y.shape
-        # shape = torch.tensor([D,H,W]).int().cuda()
-        # rasterizer = Rasterize(shape)
-        # pred_voxels_rasterized = rasterizer(vertices_mc[None], faces_mc[None]).long()
-        # io.imsave('/cvlabdata1/cvlab/datasets_udaranga/yy_rast.tif', 255 * np.uint8(pred_voxels_rasterized[0].cpu().data.numpy()))
-        # io.imsave('/cvlabdata1/cvlab/datasets_udaranga/yy.tif', 255 * np.uint8(y.cpu().data.numpy()))
-
-
-        if self.mode == DataModes.TRAINING_EXTENDED: # if training do augmentation
-
-            orientation = torch.tensor([0, -1, 0]).float()
-            new_orientation = (torch.rand(3) - 0.5) * 2 * np.pi
-            # new_orientation[2] = new_orientation[2] * 0 # no rotation outside x-y plane
-            new_orientation = F.normalize(new_orientation, dim=0)
-            q = orientation + new_orientation
-            q = F.normalize(q, dim=0)
-            theta_rotate = stns.stn_quaternion_rotations(q)
-
-            shift = torch.tensor([d / (D // 2) for d, D in zip(2 * (torch.rand(3) - 0.5) * self.cfg.augmentation_shift_range, y.shape)])
-            theta_shift = stns.shift(shift)
-            
-            f = 0.1
-            scale = 1.0 - 2 * f *(torch.rand(1) - 0.5)
-            theta_scale = stns.scale(scale) 
-
-            theta = theta_rotate @ theta_shift @ theta_scale
- 
-            x, y, base_plane = stns.transform(theta, x, y, w=base_plane)
-        else:
-            pose = torch.zeros(6).cuda()
-            # w = torch.zeros_like(y)
-            # base_plane = torch.ones_like(y)
-            theta = torch.eye(4).cuda()
-
-        # theta = theta.inverse()
-
-        # N, _ = vertices_mc.shape
-        # v = torch.cat([vertices_mc, torch.ones(N,1)],dim=1)
-        # v = theta[:3] @ v.transpose(1,0)
-        # v = v.transpose(1, 0)
-
-
-        # D, H, W = y.shape
-        # shape = torch.tensor([D,H,W]).int().cuda()
-        # rasterizer = Rasterize(shape)
-        # pred_voxels_rasterized = rasterizer(v[None], faces_mc[None]).long()
-        # io.imsave('/cvlabdata1/cvlab/datasets_udaranga/yy_rast_rot.tif', 255 * np.uint8(pred_voxels_rasterized[0].cpu().data.numpy()))
-        # io.imsave('/cvlabdata1/cvlab/datasets_udaranga/yy_rot.tif', 255 * np.uint8(y.cpu().data.numpy()))
-
-
-
-        x_super_res = torch.tensor(1)
-        y_super_res = torch.tensor(1)
-
-        x = crop(x, (C,) + self.cfg.patch_shape, (0,) + center)
-        y = crop(y, self.cfg.patch_shape, center) 
-        base_plane = crop(base_plane, self.cfg.patch_shape, center)
-
-        surface_points_normalized_all = []
-        vertices_mc_all = []
-        faces_mc_all = []  
-
-        for i in range(1, self.cfg.num_classes):   
-            shape = torch.tensor(y.shape)[None].float()
-            if self.mode != DataModes.TRAINING_EXTENDED:
-                gap = 1
-                y_ = clean_border_pixels((y==i).long(), gap=gap)
-                vertices_mc, faces_mc = voxel2mesh(y_, gap, shape)
-                vertices_mc_all += [vertices_mc]
-                faces_mc_all += [faces_mc] 
-
-          
-            sphere_vertices = self.cfg.sphere_vertices
-            atlas_faces = self.cfg.sphere_faces 
-            # self.sphere_vertices = sphere_ssvertices.repeat(self.config.config.batch_size,1,1).float()
-          
-            p = torch.acos(sphere_vertices[:,2]).cuda()
-            t = torch.atan2(sphere_vertices[:,1], sphere_vertices[:,0]).cuda()
-            p = torch.tensor(p, requires_grad=True)
-            t = torch.tensor(t, requires_grad=True) 
-         
-            y_outer = sample_outer_surface_in_voxel((y==i).long()) 
-            surface_points = torch.nonzero(y_outer)
-            surface_points = torch.flip(surface_points, dims=[1]).float()  # convert z,y,x -> x, y, z
-            surface_points_normalized = normalize_vertices(surface_points, shape) 
-            # surface_points_normalized = y_outer 
-           
-            # perm = torch.randperm(len(surface_points_normalized))
-            N = len(surface_points_normalized)
-            point_count = 3000
-            idxs = np.arange(N)
-
-            if N >= point_count:
-                perm = np.random.choice(idxs,point_count, replace=False)
+            # if self.point_count is not None:
+            #     y_mid = sample_outer_surface_in_voxel(y) ## around 1-2% points 1 among all
+            #     idxs = torch.nonzero(y_mid) ## [number of onits x 3] ## all indexes
+            #     # zero_idxs = (y_mid == 0).nonzero()
+            #     y_mid = torch.zeros_like(y)
+            #     perm = torch.randperm(len(idxs)) # random permutation
+            #     # zero_perm = torch.randperm(len(zero_idxs)) # random permutation
+            #     idxs = idxs[perm[:self.point_count]]
+            #     # zero_idxs = zero_idxs[zero_perm[:self.point_count]]
+            #     y_mid[idxs[:,0], idxs[:,1], idxs[:,2]] = 1
+            #     base_plane = y_mid.clone()
+            #     # base_plane[zero_idxs[:,0], zero_idxs[:,1], zero_idxs[:,2]] = 1
+            #     y = y_mid.clone()
+            #     # breakpoint()
+            if self.base_sparse_plane is not None:
+                base_plane = torch.from_numpy(self.base_sparse_plane[idx]).cuda().float()
             else:
-                repeats = point_count//N
-                vals = []
-                for _ in range(repeats):
-                    vals += [idxs]
+                base_plane = torch.ones_like(y).float()
+            # breakpoint()
+            C, D, H, W = x.shape
+            center = (D//2, H//2, W//2)
 
-                remainder = point_count - repeats * N
-                vals += [np.random.choice(idxs,remainder, replace=False)]
-                perm = np.concatenate(vals, axis=0)
-            
-            surface_points_normalized_all += [surface_points_normalized[perm[:np.min([len(perm), point_count])]].cuda()]  # randomly pick 3000 points
-        
+            # breakpoint()
+            y = y.long()
+
+            # embed()
+            # io.imsave('data_y_middle_plane_outer.tif', y_mid.cpu().float().detach().numpy())
+            # io.imsave('data_y_points_100.tif', y.cpu().float().detach().numpy())
+            # from utils.rasterize.rasterize import Rasterize
+            # from skimage import io
+            # shape = torch.tensor(y.shape)[None].float()
+            # gap = 1
+            # y_ = clean_border_pixels((y==1).long(), gap=gap)
+            # vertices_mc, faces_mc = voxel2mesh(y_, gap, shape)
+
+            # D, H, W = y.shape
+            # shape = torch.tensor([D,H,W]).int().cuda()
+            # rasterizer = Rasterize(shape)
+            # pred_voxels_rasterized = rasterizer(vertices_mc[None], faces_mc[None]).long()
+            # io.imsave('/cvlabdata1/cvlab/datasets_udaranga/yy_rast.tif', 255 * np.uint8(pred_voxels_rasterized[0].cpu().data.numpy()))
+            # io.imsave('/cvlabdata1/cvlab/datasets_udaranga/yy.tif', 255 * np.uint8(y.cpu().data.numpy()))
+
+
+            if self.mode == DataModes.TRAINING_EXTENDED: # if training do augmentation
+
+                orientation = torch.tensor([0, -1, 0]).float()
+                new_orientation = (torch.rand(3) - 0.5) * 2 * np.pi
+                # new_orientation[2] = new_orientation[2] * 0 # no rotation outside x-y plane
+                new_orientation = F.normalize(new_orientation, dim=0)
+                q = orientation + new_orientation
+                q = F.normalize(q, dim=0)
+                theta_rotate = stns.stn_quaternion_rotations(q)
+
+                shift = torch.tensor([d / (D // 2) for d, D in zip(2 * (torch.rand(3) - 0.5) * self.cfg.augmentation_shift_range, y.shape)])
+                theta_shift = stns.shift(shift)
+
+                f = 0.1
+                scale = 1.0 - 2 * f *(torch.rand(1) - 0.5)
+                theta_scale = stns.scale(scale)
+
+                theta = theta_rotate @ theta_shift @ theta_scale
+
+                x, y, base_plane = stns.transform(theta, x, y, w=base_plane)
+            else:
+                pose = torch.zeros(6).cuda()
+                # w = torch.zeros_like(y)
+                # base_plane = torch.ones_like(y)
+                theta = torch.eye(4).cuda()
+
+            # theta = theta.inverse()
+
+            # N, _ = vertices_mc.shape
+            # v = torch.cat([vertices_mc, torch.ones(N,1)],dim=1)
+            # v = theta[:3] @ v.transpose(1,0)
+            # v = v.transpose(1, 0)
+
+
+            # D, H, W = y.shape
+            # shape = torch.tensor([D,H,W]).int().cuda()
+            # rasterizer = Rasterize(shape)
+            # pred_voxels_rasterized = rasterizer(v[None], faces_mc[None]).long()
+            # io.imsave('/cvlabdata1/cvlab/datasets_udaranga/yy_rast_rot.tif', 255 * np.uint8(pred_voxels_rasterized[0].cpu().data.numpy()))
+            # io.imsave('/cvlabdata1/cvlab/datasets_udaranga/yy_rot.tif', 255 * np.uint8(y.cpu().data.numpy()))
+
+
+
+            x_super_res = torch.tensor(1)
+            y_super_res = torch.tensor(1)
+
+            x = crop(x, (C,) + self.cfg.patch_shape, (0,) + center)
+            y = crop(y, self.cfg.patch_shape, center)
+            base_plane = crop(base_plane, self.cfg.patch_shape, center)
+
+            surface_points_normalized_all = []
+            vertices_mc_all = []
+            faces_mc_all = []
+
+            for i in range(1, self.cfg.num_classes):
+                shape = torch.tensor(y.shape)[None].float()
+                if self.mode != DataModes.TRAINING_EXTENDED:
+                    gap = 1
+                    y_ = clean_border_pixels((y==i).long(), gap=gap)
+                    vertices_mc, faces_mc = voxel2mesh(y_, gap, shape)
+                    vertices_mc_all += [vertices_mc]
+                    faces_mc_all += [faces_mc]
+
+
+                sphere_vertices = self.cfg.sphere_vertices
+                atlas_faces = self.cfg.sphere_faces
+                # self.sphere_vertices = sphere_ssvertices.repeat(self.config.config.batch_size,1,1).float()
+
+                p = torch.acos(sphere_vertices[:,2]).cuda()
+                t = torch.atan2(sphere_vertices[:,1], sphere_vertices[:,0]).cuda()
+                p = torch.tensor(p, requires_grad=True)
+                t = torch.tensor(t, requires_grad=True)
+
+                y_outer = sample_outer_surface_in_voxel((y==i).long())
+                surface_points = torch.nonzero(y_outer)
+                surface_points = torch.flip(surface_points, dims=[1]).float()  # convert z,y,x -> x, y, z
+                surface_points_normalized = normalize_vertices(surface_points, shape)
+                # surface_points_normalized = y_outer
+
+                # perm = torch.randperm(len(surface_points_normalized))
+                N = len(surface_points_normalized)
+                point_count = 3000
+                idxs = np.arange(N)
+                if N > 0:
+                    if N >= point_count:
+                        perm = np.random.choice(idxs,point_count, replace=False)
+                    else:
+                        repeats = point_count//N
+                        vals = []
+                        for _ in range(repeats):
+                            vals += [idxs]
+
+                        remainder = point_count - repeats * N
+                        vals += [np.random.choice(idxs,remainder, replace=False)]
+                        perm = np.concatenate(vals, axis=0)
+
+                    surface_points_normalized_all += [surface_points_normalized[perm[:np.min([len(perm), point_count])]].cuda()]  # randomly pick 3000 points
+                    # breakpoint()
+            if N > 0:
+                break
+
         # print('in')
+        # breakpoint()
         if self.mode == DataModes.TRAINING_EXTENDED:
             return {   'x': x, 
                        'faces_atlas': atlas_faces, 
@@ -231,28 +241,64 @@ class CortexEpfl(DatasetAndSupport):
 
         if cfg.sparse_model == 'point_model':
             point_count = 100  ## ex: out of 21k
+            zero_points = False
             print(f"using {point_count} points for annotation")
 
+            base_plane_list = []
+            for sample in data[DataModes.TRAINING].data:
+                yy = torch.from_numpy(sample.y).cuda().long()
+                y_mid = sample_outer_surface_in_voxel(yy)
+                # idxs = torch.nonzero(y_mid)  ## [number of ponits x 3 dim] ## all indexes
+                idxs = (y_mid == 1).nonzero()
+                zero_idxs = (y_mid == 0).nonzero()
+                y_mid = torch.zeros_like(yy)
+                perm = torch.randperm(len(idxs))  # random permutation
+                zero_perm = torch.randperm(len(zero_idxs)) # random permutation
+                idxs = idxs[perm[:point_count]]
+                zero_idxs = zero_idxs[zero_perm[:point_count]]
+                y_mid[idxs[:, 0], idxs[:, 1], idxs[:, 2]] = 1
+                base_plane = y_mid.clone()
+                if zero_points:
+                    base_plane[zero_idxs[:,0], zero_idxs[:,1], zero_idxs[:,2]] = 1
+                sample.y = y_mid.clone().cpu().numpy()
+                base_plane_list.append(base_plane.cpu().numpy())
+                # breakpoint()
+                # io.imsave('data_org_Y.tif', sample.y.cpu().float().detach().numpy())
+
             data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg,\
-                                                                   DataModes.TRAINING_EXTENDED, point_count=point_count)
+                                                                   DataModes.TRAINING_EXTENDED, point_count=point_count, base_sparse_plane=base_plane_list)
         elif cfg.sparse_model == 'base_plane_model':
             print("Using base plane model for sparse annotation")
             planes_per_axis = 2
             half_plane = len(data[DataModes.TRAINING].data[0].y)//planes_per_axis # 135//2 = 67
             keep_planes = np.zeros_like(data[DataModes.TRAINING].data[0].y)
             keep_planes[:,:,half_plane] = 1
-            keep_planes[half_plane,:,:] = 1
-            keep_planes[:,half_plane, :] = 1
+            # keep_planes[half_plane,:,:] = 1
+            # keep_planes[:,half_plane, :] = 1
             # half_plane3 = half_plane*2
             # keep_planes[:,:,half_plane3] = 1
             # keep_planes[half_plane3,:,:] = 1
             # keep_planes[:,half_plane3, :] = 1
-
+            lenlist = []
+            base_plane_list = []
             for sample in data[DataModes.TRAINING].data:
                 sample.y = sample.y*keep_planes ## for each new training data, only keep few given plane
+                base_plane_list.append(keep_planes)
+
+                yyy = torch.from_numpy(sample.y).cuda().long()
+                y_plane_sum = sample_outer_surface_in_voxel(yyy).sum()
+                lenlist.append((y_plane_sum - 2*yyy.sum()).item())
+                print(f"Average points of a plane {(sum(lenlist) / len(lenlist))}")
+
+                # yyy = torch.from_numpy(sample.y).cuda().long()
+                # y_plane = sample_outer_surface_in_voxel(yyy)
+                # sample.y = sample.y*keep_planes ## for each new training data, only keep few given plane
+                # y_plane = y_plane*keep_planes
+                # base_plane_list.append(keep_planes)
+                # lenlist.append(y_plane.sum().item())
 
             data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, \
-                                                                   DataModes.TRAINING_EXTENDED, base_sparse_plane=keep_planes)
+                                                                   DataModes.TRAINING_EXTENDED, base_sparse_plane=base_plane_list)
 
         else:
             print("with full annotation")
@@ -263,7 +309,7 @@ class CortexEpfl(DatasetAndSupport):
         # data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, DataModes.TRAINING_EXTENDED)
         # data[DataModes.TRAINING] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, DataModes.TRAINING)
         data[DataModes.TESTING] = CortexVoxelDataset(data[DataModes.TESTING].data, cfg, DataModes.TESTING)
-    
+
         return data
 
     def load_data(self, cfg, trial_id):
