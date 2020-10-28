@@ -189,12 +189,16 @@ class Voxel2Mesh(nn.Module):
          
         pred = self.forward(data)  
         # embed()
-        
+        # loss_coef = max(1/(2**(epoch//10000)), 0.1)
 
-         
-        CE_Loss = nn.CrossEntropyLoss() 
+
+
+        CE_Loss = nn.CrossEntropyLoss()
         ce_loss = CE_Loss(pred[0][-1][3], data['y_voxels'])
-
+        # weight = data['base_plane'].float().cuda()
+        # CE_Loss = nn.CrossEntropyLoss(reduction='none')
+        # ce_loss = CE_Loss(pred[0][-1][3], data['y_voxels'].cuda()) * weight
+        # ce_loss = ce_loss.mean()
 
         chamfer_loss = torch.tensor(0).float().cuda()
         edge_loss = torch.tensor(0).float().cuda()
@@ -204,22 +208,35 @@ class Voxel2Mesh(nn.Module):
         for c in range(self.config.num_classes-1):
             target = data['surface_points'][c].cuda() 
             for k, (vertices, faces, _, _, _) in enumerate(pred[c][1:]):
-      
+
                 pred_mesh = Meshes(verts=list(vertices), faces=list(faces))
                 pred_points = sample_points_from_meshes(pred_mesh, 3000)
-                
+
                 chamfer_loss +=  chamfer_distance(pred_points, target)[0]
                 laplacian_loss +=   mesh_laplacian_smoothing(pred_mesh, method="uniform")
-                normal_consistency_loss += mesh_normal_consistency(pred_mesh) 
-                edge_loss += mesh_edge_loss(pred_mesh) 
+                normal_consistency_loss += mesh_normal_consistency(pred_mesh)
+                edge_loss += mesh_edge_loss(pred_mesh)
 
-        
-        
- 
+            # vertices, faces, _, _, _ = pred[c][-1]
+            # pred_mesh = Meshes(verts=list(vertices), faces=list(faces))
+            # pred_points = sample_points_from_meshes(pred_mesh, 3000)
+            #
+            # chamfer_loss += chamfer_distance(pred_points, target)[0]*5
+            # laplacian_loss += mesh_laplacian_smoothing(pred_mesh, method="uniform")*5
+            # normal_consistency_loss += mesh_normal_consistency(pred_mesh)*5
+            # edge_loss += mesh_edge_loss(pred_mesh)*5
+            #
+            # # chamfer_loss = chamfer_loss/2
+            # # laplacian_loss = laplacian_loss/2
+            # # normal_consistency_loss = normal_consistency_loss/2
+            # # edge_loss = edge_loss/2
+
         loss = 1 * chamfer_loss + 1 * ce_loss + 0.1 * laplacian_loss + 1 * edge_loss + 0.1 * normal_consistency_loss
- 
+        # loss = 1 * chamfer_loss + 0.1 * laplacian_loss + loss_coef * edge_loss + 0.1 * normal_consistency_loss
+
         log = {"loss": loss.detach(),
                "chamfer_loss": chamfer_loss.detach(), 
+               # "loss_coef": loss_coef,
                "ce_loss": ce_loss.detach(),
                "normal_consistency_loss": normal_consistency_loss.detach(),
                "edge_loss": edge_loss.detach(),
