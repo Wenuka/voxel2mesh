@@ -98,5 +98,5 @@ def load_config(exp_id):
     # cfg.unpool_indices = [0, 1, 0, 1, 1] #EX3- 32
     # cfg.unpool_indices = False ## for unet just to check
 
-    cfg.sparse_model ='else' # 'point_model' , 'base_plane_model' or anything else lead to fully_annotated based training
+    cfg.sparse_model ='point_model' # 'point_model' , 'base_plane_model' or anything else lead to fully_annotated based training
     return cfg

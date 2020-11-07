@@ -178,25 +178,28 @@ class CortexVoxelDataset(Dataset):
 
                 # perm = torch.randperm(len(surface_points_normalized))
                 N = len(surface_points_normalized)
-                point_count = 3000
-                idxs = np.arange(N)
-                if N > 0:
-                    if N >= point_count:
-                        perm = np.random.choice(idxs,point_count, replace=False)
-                    else:
-                        repeats = point_count//N
-                        vals = []
-                        for _ in range(repeats):
-                            vals += [idxs]
-
-                        remainder = point_count - repeats * N
-                        vals += [np.random.choice(idxs,remainder, replace=False)]
-                        perm = np.concatenate(vals, axis=0)
-
-                    surface_points_normalized_all += [surface_points_normalized[perm[:np.min([len(perm), point_count])]].cuda()]  # randomly pick 3000 points
-                    # breakpoint()
+                # point_count = 3000
+                # idxs = np.arange(N)
+                # if N > 0:
+                #     if N >= point_count:
+                #         perm = np.random.choice(idxs,point_count, replace=False)
+                #     else:
+                #         repeats = point_count//N
+                #         vals = []
+                #         for _ in range(repeats):
+                #             vals += [idxs]
+                #
+                #         remainder = point_count - repeats * N
+                #         vals += [np.random.choice(idxs,remainder, replace=False)]
+                #         perm = np.concatenate(vals, axis=0)
+                #
+                #     surface_points_normalized_all += [surface_points_normalized[perm[:np.min([len(perm), point_count])]].cuda()]  # randomly pick 3000 points
+                #     # breakpoint()
+                surface_points_normalized_all += [surface_points_normalized.cuda()]
             if N > 0:
                 break
+            else:
+                print("re-applying deformation coz N=0")
 
         # print('in')
         # breakpoint()
@@ -254,8 +257,10 @@ class CortexEpfl(DatasetAndSupport):
                 yy = torch.from_numpy(sample.y).cuda().long()
                 y_mid = sample_outer_surface_in_voxel(yy)
                 # idxs = torch.nonzero(y_mid)  ## [number of ponits x 3 dim] ## all indexes
-                idxs = (y_mid == 1).nonzero()
-                zero_idxs = (y_mid == 0).nonzero()
+                idxs = torch.nonzero((y_mid == 1))
+                zero_idxs = torch.nonzero((y_mid == 0))
+                # idxs = (y_mid == 1).nonzero() # warning saying this is depreciated
+                # zero_idxs = (y_mid == 0).nonzero()
                 y_mid = torch.zeros_like(yy)
                 perm = torch.randperm(len(idxs))  # random permutation
                 zero_perm = torch.randperm(len(zero_idxs)) # random permutation
@@ -293,7 +298,6 @@ class CortexEpfl(DatasetAndSupport):
                 yyy = torch.from_numpy(sample.y).cuda().long()
                 y_plane_sum = sample_outer_surface_in_voxel(yyy).sum()
                 lenlist.append((y_plane_sum - 2*yyy.sum()).item())
-                print(f"Average points of a plane {(sum(lenlist) / len(lenlist))}")
 
                 # yyy = torch.from_numpy(sample.y).cuda().long()
                 # y_plane = sample_outer_surface_in_voxel(yyy)
@@ -301,6 +305,7 @@ class CortexEpfl(DatasetAndSupport):
                 # y_plane = y_plane*keep_planes
                 # base_plane_list.append(keep_planes)
                 # lenlist.append(y_plane.sum().item())
+            print(f"Average points of a plane {(sum(lenlist) / len(lenlist))}")
 
             data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, \
                                                                    DataModes.TRAINING_EXTENDED, base_sparse_plane=base_plane_list)
@@ -314,7 +319,7 @@ class CortexEpfl(DatasetAndSupport):
         # data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, DataModes.TRAINING_EXTENDED)
         # data[DataModes.TRAINING] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, DataModes.TRAINING)
         data[DataModes.TESTING] = CortexVoxelDataset(data[DataModes.TESTING].data, cfg, DataModes.TESTING)
-
+        print("finish quick-load data.")
         return data
 
     def load_data(self, cfg, trial_id):

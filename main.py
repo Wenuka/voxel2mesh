@@ -1,6 +1,6 @@
  
 import os
-GPU_index = "1"
+GPU_index = "3"
 os.environ["CUDA_VISIBLE_DEVICES"] = GPU_index
 
   
@@ -133,5 +133,5 @@ def main():
 
     evaluator.evaluate(epoch)
 
-if __name__ == "__main__": 
+if __name__ == "__main__":
     main()

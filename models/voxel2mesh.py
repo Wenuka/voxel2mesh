@@ -193,12 +193,12 @@ class Voxel2Mesh(nn.Module):
 
 
 
-        CE_Loss = nn.CrossEntropyLoss()
-        ce_loss = CE_Loss(pred[0][-1][3], data['y_voxels'])
-        # weight = data['base_plane'].float().cuda()
-        # CE_Loss = nn.CrossEntropyLoss(reduction='none')
-        # ce_loss = CE_Loss(pred[0][-1][3], data['y_voxels'].cuda()) * weight
-        # ce_loss = ce_loss.mean()
+        # CE_Loss = nn.CrossEntropyLoss()
+        # ce_loss = CE_Loss(pred[0][-1][3], data['y_voxels'])
+        weight = data['base_plane'].float().cuda()
+        CE_Loss = nn.CrossEntropyLoss(reduction='none')
+        ce_loss = CE_Loss(pred[0][-1][3], data['y_voxels'].cuda()) * weight
+        ce_loss = ce_loss.mean()
 
         chamfer_loss = torch.tensor(0).float().cuda()
         edge_loss = torch.tensor(0).float().cuda()
@@ -232,6 +232,7 @@ class Voxel2Mesh(nn.Module):
             # # edge_loss = edge_loss/2
 
         loss = 1 * chamfer_loss + 1 * ce_loss + 0.1 * laplacian_loss + 1 * edge_loss + 0.1 * normal_consistency_loss
+        # loss = 1 * chamfer_loss + 0.1 * laplacian_loss + 1 * edge_loss + 0.1 * normal_consistency_loss
         # loss = 1 * chamfer_loss + 0.1 * laplacian_loss + loss_coef * edge_loss + 0.1 * normal_consistency_loss
 
         log = {"loss": loss.detach(),
