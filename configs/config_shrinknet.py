@@ -99,4 +99,9 @@ def load_config(exp_id):
     # cfg.unpool_indices = False ## for unet just to check
 
     cfg.sparse_model ='point_model' # 'point_model' , 'base_plane_model' or anything else lead to fully_annotated based training
+
+    # if point_model, set these params
+    cfg.point_count = 400
+    cfg.zero_points = True
+    cfg.inside_points = False
     return cfg
