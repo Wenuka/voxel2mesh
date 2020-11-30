@@ -11,6 +11,7 @@ from train import Trainer
 from evaluate import Evaluator  
 # from data.chaos import Chaos
 from datasets.CORTEX_EPFL.cortexepfl_mesh3 import CortexEpfl
+from datasets.CHAOS.chaos_ct import Chaos
 from shutil import copytree, ignore_patterns
 import torch.optim as optim
 from torch.utils.data import DataLoader
@@ -77,12 +78,12 @@ def main():
 
     if cfg.name == 'voxel2mesh':
         from models.voxel2mesh import Voxel2Mesh as network
-        print ("using voxel2mesh model")
+        print("using voxel2mesh model")
     elif cfg.name == 'unet':
         from models.unet import UNet as network
-        print ("using unet model")
+        print("using unet model")
     else:
-        print ("Error at selecting the model. Please correct at config file.")
+        print("Error at selecting the model. Please correct at config file.")
         exit()
 
     # Initialize
@@ -99,9 +100,13 @@ def main():
     print("Initialize optimizer")
     optimizer = optim.Adam(filter(lambda p: p.requires_grad, classifier.parameters()), lr=cfg.learning_rate)  
   
-    print("Load data") 
-    # data_obj = Chaos()
-    data_obj = CortexEpfl()  ## inherited from DatasetAndSupport class
+    print("Load data")
+    if cfg.dataset == 'ctLiver':
+        print("using CT-Liver dataset")
+        data_obj = Chaos()
+    else:
+        print("using neuron dataset")
+        data_obj = CortexEpfl()  ## inherited from DatasetAndSupport class
 
     # During the first run use load_data function. It will do the necessary preprocessing and save the files to disk.
     # data = data_obj.pre_process_dataset(cfg, trial_id)

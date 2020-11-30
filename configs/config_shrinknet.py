@@ -57,7 +57,10 @@ def load_config(exp_id):
  
     cfg.name = 'voxel2mesh'
     # cfg.name = 'unet'
-   
+
+    cfg.dataset = 'ctLiver'
+    # cfg.dataset = ''
+
 
     ''' Dataset ''' 
     cfg.training_set_size = 10  
@@ -94,14 +97,23 @@ def load_config(exp_id):
     # cfg.wab = True # use weight and biases for reporting
 
     ''' ** To Verify ** '''
-    cfg.unpool_indices = [0, 1, 1, 1, 0] #Ex3-31,33 ## use this always
+    cfg.unpool_indices = [0, 1, 1, 1, 0] # use this always
     # cfg.unpool_indices = [0, 1, 0, 1, 1] #EX3- 32
     # cfg.unpool_indices = False ## for unet just to check
 
-    cfg.sparse_model ='point_model' # 'point_model' , 'base_plane_model' or anything else lead to fully_annotated based training
+    cfg.sparse_model ='point_model' # 'hybrid_model', 'point_model' , 'base_plane_model' or anything else lead to fully_annotated based training
 
     # if point_model, set these params
     cfg.point_count = 400
     cfg.zero_points = True
     cfg.inside_points = False
+
+    # if line_model, set these params
+    cfg.half_width = 1
+    cfg.line_count_per_plane = 20
+    cfg.line_select_type = "random"  # minmax, on_sort, random
+
+    # for CT scan- liver dataset
+    cfg.hint_patch_shape = [128, 128, 128]
+
     return cfg
