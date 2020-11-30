@@ -27,12 +27,12 @@ class Sample:
 
 class CortexVoxelDataset(Dataset):
 
-    def __init__(self, data, cfg, mode, base_sparse_plane=None, point_count=None):
+    def __init__(self, data, cfg, mode, base_sparse_plane=None, point_model=None):
         self.data = data
         self.cfg = cfg
         self.mode = mode
         self.base_sparse_plane = base_sparse_plane
-        self.point_count = point_count
+        self.point_model = point_model
 
 
     def __len__(self):
@@ -49,7 +49,7 @@ class CortexVoxelDataset(Dataset):
             y = torch.from_numpy(item.y).cuda().long()
             # embed()
             ## also done in quick load
-            y[y == 2] = 0
+            # y[y == 2] = 0 ## now y==2 means inside points
             y[y == 3] = 0
             # y[y==3] = 1
 
@@ -136,8 +136,14 @@ class CortexVoxelDataset(Dataset):
             # pred_voxels_rasterized = rasterizer(v[None], faces_mc[None]).long()
             # io.imsave('/cvlabdata1/cvlab/datasets_udaranga/yy_rast_rot.tif', 255 * np.uint8(pred_voxels_rasterized[0].cpu().data.numpy()))
             # io.imsave('/cvlabdata1/cvlab/datasets_udaranga/yy_rot.tif', 255 * np.uint8(y.cpu().data.numpy()))
-
-
+            #
+            # ## change for model_id = 4
+            # if self.point_model is not None:
+            #     surface_points = torch.nonzero((y == 1))
+            #     y_outer = torch.zeros_like(y)
+            #     y_outer[surface_points[:, 0], surface_points[:, 1], surface_points[:, 2]] = 1
+            #     y[y == 2] = 1
+            # # breakpoint()
 
             x_super_res = torch.tensor(1)
             y_super_res = torch.tensor(1)
@@ -145,6 +151,14 @@ class CortexVoxelDataset(Dataset):
             x = crop(x, (C,) + self.cfg.patch_shape, (0,) + center)
             y = crop(y, self.cfg.patch_shape, center)
             base_plane = crop(base_plane, self.cfg.patch_shape, center)
+
+
+            ## change for model_id = 4
+            if self.point_model is not None:
+                surface_points = torch.nonzero((y == 1))
+                y_outer = torch.zeros_like(y)
+                y_outer[surface_points[:, 0], surface_points[:, 1], surface_points[:, 2]] = 1
+                y[y == 2] = 1
 
             surface_points_normalized_all = []
             vertices_mc_all = []
@@ -169,11 +183,12 @@ class CortexVoxelDataset(Dataset):
                 p = torch.tensor(p, requires_grad=True)
                 t = torch.tensor(t, requires_grad=True)
 
-                ### change for model_id = 4
-                # surface_points = torch.nonzero((y == 1))
-                # y_outer = y
-                y_outer = sample_outer_surface_in_voxel((y==i).long())
-                surface_points = torch.nonzero(y_outer)
+                ## change for model_id = 4
+                if self.point_model is None:
+
+                    y_outer = sample_outer_surface_in_voxel((y==i).long())
+                    surface_points = torch.nonzero(y_outer)
+
                 surface_points = torch.flip(surface_points, dims=[1]).float()  # convert z,y,x -> x, y, z
                 surface_points_normalized = normalize_vertices(surface_points, shape)
                 # surface_points_normalized = y_outer
@@ -236,22 +251,94 @@ class CortexVoxelDataset(Dataset):
 
 
 class CortexEpfl(DatasetAndSupport):
-    def quick_load_data(self, cfg, trial_id):
-        # assert cfg.patch_shape == (96, 96, 96), 'Not supported'
-        data_root = '/cvlabsrc1'+volume_suffix+'/cvlab/datasets_udaranga/datasets/3d/graham/'
-        class_id = 14
-        data_version = 'labels_v' + str(class_id) + '/'
+    def select_min_max_lines(self, y_one_plane, keep_plane, half_width=5):
+        # keep_plane = np.zeros_like(y_one_plane.cpu())
+        idxs = torch.nonzero((y_one_plane == 1))
+        if len(idxs)>0:
+            idxs_argsort = torch.argsort(idxs, dim=0)
+            xmin, ymin = idxs_argsort[0]
+            xmax, ymax = idxs_argsort[-1]
+            for val in [xmin, ymin, xmax, ymax]:
+                keep_plane[(idxs[val][0] - half_width):(idxs[val][0] + half_width),
+                (idxs[val][1] - half_width):(idxs[val][1] + half_width)] = 1
+        return keep_plane
 
-        with open(data_root + data_version + 'labels/pre_computed_voxel.pickle', 'rb') as handle:
-            data = pickle.load(handle)
+
+    def select_few_lines(self, y_one_plane, keep_plane, line_count, half_width=5, select_type="on_sort"):
+        idxs = torch.nonzero((y_one_plane == 1))
+        # select_type = "on_sort"  # "random", "on_sort", "on_sort_y"
+        if len(idxs) > 0:
+            if (select_type=="random"):
+                perm = torch.randperm(len(idxs))
+                idxs_points = idxs[perm[:line_count]]
+            else:
+            # elif (select_type=="on_sort"):
+                idxs_argsort = torch.argsort(idxs, dim=0)
+                idxs_points = []
+                # breakpoint()
+                for i in range(0, len(idxs), max((len(idxs)*2)//(line_count), 1)):
+                    idxs_points.append(idxs[idxs_argsort[i][0]])  # add from sorted x
+                    idxs_points.append(idxs[idxs_argsort[i][1]])  # add from sorted y
+
+                idxs_points.append(idxs[idxs_argsort[-1][0]])  # add last from sorted x
+                idxs_points.append(idxs[idxs_argsort[-1][1]])  # add last from sorted y
+
+            for val in idxs_points:
+                keep_plane[(val[0] - half_width):(val[0] + half_width),
+                    (val[1] - half_width):(val[1] + half_width)] = 1
+            # breakpoint()
+
+        return keep_plane
+    def process_for_quick_load(self, data, cfg):
+
         ### change for model_id = 1
         for sample in data[DataModes.TRAINING].data:
             sample.y[sample.y >1] = 0
         for sample in data[DataModes.TESTING].data:
             sample.y[sample.y >1] = 0
         # breakpoint()
-        if cfg.sparse_model == 'point_model':
-            point_count_org = cfg.point_count ##100  ## ex: out of 21k
+        if cfg.sparse_model == 'line_model':
+            half_width = cfg.half_width
+            line_count_per_plane = cfg.line_count_per_plane
+            select_type = cfg.line_select_type
+            # half_width = 4
+            # half_height = 5
+            print(f"Using line model for sparse annotation with half width: {half_width}")
+            # half_plane = len(data[DataModes.TRAINING].data[0].y) // 2  # 135//2 = 67
+            lenlist = []
+            base_plane_list = []
+            for sample in data[DataModes.TRAINING].data:
+                keep_lines = np.zeros_like(data[DataModes.TRAINING].data[0].y)
+                half_plane_org = len(data[DataModes.TRAINING].data[0].y) // 4
+
+                y_val = torch.from_numpy(sample.y).cuda().long()
+                y_outer = sample_outer_surface_in_voxel(y_val)
+                # breakpoint()
+                for half_plane in [half_plane_org, half_plane_org*2, half_plane_org*3]:
+                    if (select_type == "minmax"):
+                        keep_lines[:, :, half_plane] = self.select_min_max_lines(y_outer[:, :, half_plane], keep_lines[:, :, half_plane], half_width=half_width)
+                        keep_lines[half_plane, :, :] = self.select_min_max_lines(y_outer[half_plane, :, :], keep_lines[half_plane, :, :], half_width=half_width)
+                        keep_lines[:, half_plane, :] = self.select_min_max_lines(y_outer[:, half_plane, :], keep_lines[:, half_plane, :], half_width=half_width)
+
+                    else:
+                        keep_lines[:, :, half_plane] = self.select_few_lines(y_outer[:, :, half_plane], keep_lines[:, :, half_plane], line_count_per_plane, half_width=half_width, select_type=select_type)
+                        keep_lines[half_plane, :, :] = self.select_few_lines(y_outer[half_plane, :, :], keep_lines[half_plane, :, :], line_count_per_plane, half_width=half_width, select_type=select_type)
+                        keep_lines[:, half_plane, :] = self.select_few_lines(y_outer[:, half_plane, :], keep_lines[:, half_plane, :], line_count_per_plane, half_width=half_width, select_type=select_type)
+
+
+                sample.y = y_outer.cpu().float().detach().numpy() * keep_lines
+                base_plane_list.append(sample.y)
+
+                lenlist.append(sample.y.sum())
+            print(f"Average points of a plane {(sum(lenlist) / len(lenlist))}")
+            print(lenlist)
+
+            data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, \
+                                                                   DataModes.TRAINING_EXTENDED, point_model=True,
+                                                                   base_sparse_plane=base_plane_list)
+
+        elif cfg.sparse_model == 'point_model':
+            point_count_org = cfg.point_count
             zero_points = cfg.zero_points
             inside_points = cfg.inside_points
 
@@ -270,39 +357,94 @@ class CortexEpfl(DatasetAndSupport):
                 point_count = point_count_org
                 yy = torch.from_numpy(sample.y).cuda().long()
                 y_mid = sample_outer_surface_in_voxel(yy)
-                # idxs = torch.nonzero(y_mid)  ## [number of ponits x 3 dim] ## all indexes
                 idxs = torch.nonzero((y_mid == 1))
-                zero_idxs = torch.nonzero((y_mid == 0))
-                # idxs = (y_mid == 1).nonzero() # warning saying this is depreciated
-                # zero_idxs = (y_mid == 0).nonzero()
+                zero_idxs = torch.nonzero((yy == 0))
+                ## todo: remove if idx points in zero_idxs
                 y_mid = torch.zeros_like(yy)
                 perm = torch.randperm(len(idxs))  # random permutation
                 zero_perm = torch.randperm(len(zero_idxs)) # random permutation
                 idxs = idxs[perm[:point_count]]
                 y_mid[idxs[:, 0], idxs[:, 1], idxs[:, 2]] = 1
-                # base_plane = y_mid.clone()
+                base_plane = y_mid.clone()
                 if inside_points:
                     point_count = point_count2 # now its 25% from original
                     inside_idxs = torch.nonzero((yy == 1))
                     inside_perm = torch.randperm(len(inside_idxs)) # random permutation
                     inside_idxs = inside_idxs[inside_perm[:point_count]]
-                    y_mid[inside_idxs[:, 0], inside_idxs[:, 1], inside_idxs[:, 2]] = 1
-                    # base_plane[inside_idxs[:,0], inside_idxs[:,1], inside_idxs[:,2]] = 1
-
-                base_plane = y_mid.clone()
-
-
+                    y_mid[inside_idxs[:, 0], inside_idxs[:, 1], inside_idxs[:, 2]] = 2
+                    base_plane[inside_idxs[:,0], inside_idxs[:,1], inside_idxs[:,2]] = 1
                 if zero_points:
                     zero_idxs = zero_idxs[zero_perm[:point_count]]
                     base_plane[zero_idxs[:,0], zero_idxs[:,1], zero_idxs[:,2]] = 1
                 sample.y = y_mid.clone().cpu().numpy()
                 base_plane_list.append(base_plane.cpu().numpy())
-                # breakpoint()
                 # io.imsave('data_org_Y.tif', sample.y.cpu().float().detach().numpy())
+            # breakpoint()
+
+            data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg,\
+                                                                   DataModes.TRAINING_EXTENDED, point_model=True, base_sparse_plane=base_plane_list)
+        elif cfg.sparse_model == 'hybrid_model':
+            point_count_org = cfg.point_count
+            zero_points = cfg.zero_points
+            inside_points = cfg.inside_points
+
+            half_plane = len(data[DataModes.TRAINING].data[0].y) // 2  # 135//2 = 67
+            keep_planes = np.zeros_like(data[DataModes.TRAINING].data[0].y)
+            keep_planes[:, :, half_plane] = 1
+            # keep_planes[half_plane, :, :] = 1
+            # keep_planes[:, half_plane, :] = 1
+
+
+            if inside_points:
+                point_count_org = int(point_count_org / 2)
+                point_count2 = int(point_count_org / 2)
+                print(f"using {point_count_org} points for annotation and {point_count_org/2} for inside and background")
+            elif zero_points:
+                point_count_org = int(point_count_org / 2)
+                print(f"using {point_count_org} points for each annotation and background")
+            else:
+                print(f"using {point_count_org} points for annotation")
+
+            base_plane_list = []
+            for sample in data[DataModes.TRAINING].data:
+                point_count = point_count_org
+                yy = torch.from_numpy(sample.y).cuda().long()
+                y_outer = sample_outer_surface_in_voxel(yy)
+                idxs = torch.nonzero((y_outer == 1))
+                zero_idxs = torch.nonzero((yy == 0))
+                ## todo: remove if idx points in zero_idxs
+
+                y_mid = yy * torch.from_numpy(keep_planes).cuda().long() *2 #inside points are 2
+                # y_mid = y_mid *2 #inside points are 2
+                y_outer = y_outer * torch.from_numpy(keep_planes).cuda().long()
+                line_idxs = torch.nonzero((y_outer == 1))
+                y_mid[line_idxs[:, 0], line_idxs[:, 1], line_idxs[:, 2]] = 1 # outer line should be 1
+
+                perm = torch.randperm(len(idxs))  # random permutation
+                zero_perm = torch.randperm(len(zero_idxs)) # random permutation
+                idxs = idxs[perm[:point_count]]
+                y_mid[idxs[:, 0], idxs[:, 1], idxs[:, 2]] = 1
+                base_plane = torch.from_numpy(keep_planes).cuda().clone()
+                base_plane[idxs[:, 0], idxs[:, 1], idxs[:, 2]] = 1
+
+                if inside_points:
+                    point_count = point_count2 # now its 25% from original
+                    inside_idxs = torch.nonzero((yy == 1))
+                    inside_perm = torch.randperm(len(inside_idxs)) # random permutation
+                    inside_idxs = inside_idxs[inside_perm[:point_count]]
+                    y_mid[inside_idxs[:, 0], inside_idxs[:, 1], inside_idxs[:, 2]] = 2
+                    base_plane[inside_idxs[:,0], inside_idxs[:,1], inside_idxs[:,2]] = 1
+                if zero_points:
+                    zero_idxs = zero_idxs[zero_perm[:point_count]]
+                    base_plane[zero_idxs[:,0], zero_idxs[:,1], zero_idxs[:,2]] = 1
+                sample.y = y_mid.clone().cpu().numpy()
+                base_plane_list.append(base_plane.cpu().numpy())
+                # io.imsave('y_mid.tif', y_mid.cpu().float().detach().numpy())
             breakpoint()
 
             data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg,\
-                                                                   DataModes.TRAINING_EXTENDED, point_count=point_count, base_sparse_plane=base_plane_list)
+                                                                   DataModes.TRAINING_EXTENDED, point_model=True, base_sparse_plane=base_plane_list)
+
         elif cfg.sparse_model == 'base_plane_model':
             print("Using base plane model for sparse annotation")
             half_plane = len(data[DataModes.TRAINING].data[0].y)//2 # 135//2 = 67
@@ -323,21 +465,13 @@ class CortexEpfl(DatasetAndSupport):
                 y_plane = y_plane*torch.from_numpy(keep_planes).cuda().long()
                 sample.y = sample.y*keep_planes ## for each new training data, only keep few given plane
                 base_plane_list.append(keep_planes)
-
                 # yyy = torch.from_numpy(sample.y).cuda().long()
                 # y_plane_sum = sample_outer_surface_in_voxel(yyy).sum()
                 # lenlist.append((y_plane_sum - 2*yyy.sum()).item())
                 lenlist.append(y_plane.sum().item())
-
-                # yyy = torch.from_numpy(sample.y).cuda().long()
-                # y_plane = sample_outer_surface_in_voxel(yyy)
-                # sample.y = sample.y*keep_planes ## for each new training data, only keep few given plane
-                # y_plane = y_plane*keep_planes
-                # base_plane_list.append(keep_planes)
-                # lenlist.append(y_plane.sum().item())
             print(f"Average points of a plane {(sum(lenlist) / len(lenlist))}")
             print(lenlist)
-            breakpoint()
+            # breakpoint()
 
             data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, \
                                                                    DataModes.TRAINING_EXTENDED, base_sparse_plane=base_plane_list)
@@ -346,11 +480,19 @@ class CortexEpfl(DatasetAndSupport):
             print("with full annotation")
             data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, DataModes.TRAINING_EXTENDED)
 
-        # data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, data[DataModes.TRAINING].cfg, DataModes.TRAINING_EXTENDED)
-        # data[DataModes.TRAINING] = CortexVoxelDataset(data[DataModes.TRAINING].data, data[DataModes.TRAINING].cfg, DataModes.TRAINING)
-        # data[DataModes.TRAINING_EXTENDED] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, DataModes.TRAINING_EXTENDED)
-        # data[DataModes.TRAINING] = CortexVoxelDataset(data[DataModes.TRAINING].data, cfg, DataModes.TRAINING)
         data[DataModes.TESTING] = CortexVoxelDataset(data[DataModes.TESTING].data, cfg, DataModes.TESTING)
+
+    def quick_load_data(self, cfg, trial_id):
+        # assert cfg.patch_shape == (96, 96, 96), 'Not supported'
+        # breakpoint()
+        data_root = '/cvlabsrc1'+volume_suffix+'/cvlab/datasets_udaranga/datasets/3d/graham/'  ## nueron dataset
+        class_id = 14
+        data_version = 'labels_v' + str(class_id) + '/'
+
+        with open(data_root + data_version + 'labels/pre_computed_voxel.pickle', 'rb') as handle:
+            data = pickle.load(handle)
+        self.process_for_quick_load(data, cfg)
+
         print("finish quick-load data.")
         return data
 
