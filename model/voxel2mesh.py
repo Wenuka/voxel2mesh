@@ -10,7 +10,7 @@ import numpy as np
 from itertools import product, combinations, chain
 from scipy.spatial import ConvexHull
 
-from IPython import embed 
+# from IPython import embed
 import time 
 
 from utils.utils_common import crop_and_merge  

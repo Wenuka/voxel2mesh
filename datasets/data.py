@@ -7,7 +7,7 @@ import torch.nn.functional as F
 # from utils import stns
 # from utils.utils_mesh import voxel2mesh, clean_border_pixels
 import numpy as np 
-from IPython import embed 
+# from IPython import embed
  
 
 class Sample:

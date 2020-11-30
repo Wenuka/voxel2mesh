@@ -1,6 +1,6 @@
 import numpy as np
 from skimage import io
-from data.data import get_item, sample_outer_surface_in_voxel
+from datasets.data import get_item, sample_outer_surface_in_voxel
 
 import sys
 from utils.metrics import jaccard_index, chamfer_weighted_symmetric, chamfer_directed
@@ -18,7 +18,7 @@ import itertools as itr
 import torch
 from scipy import ndimage
 import os
-from IPython import embed
+# from IPython import embed
 import pydicom
 
 class Sample:

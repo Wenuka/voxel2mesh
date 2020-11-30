@@ -11,7 +11,7 @@ from torch.autograd import Function
 import torch
 
 import rasterize_cuda
-from IPython import embed
+# from IPython import embed
 
 
 torch.manual_seed(42)
